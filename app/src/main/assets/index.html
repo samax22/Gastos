@@ -93,6 +93,11 @@ header h1{font-size:28px;font-weight:700}
 .xl{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);gap:8px;font-size:11.5px;color:var(--muted);text-align:center;text-transform:capitalize}
 .goalbox{display:flex;flex-direction:column;gap:10px}
 .goalbox h3{font-size:17px}
+.ingresos{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.2fr);gap:12px 22px;border-top:1px solid var(--line);padding-top:16px;align-items:start}
+.ingresos .ing-head{display:flex;flex-direction:column;gap:6px}
+.ingresos #inList{grid-column:1/-1}
+.ingresos .ing-form{border-top:0;padding-top:0}
+@media (max-width:820px){.ingresos{grid-template-columns:1fr}}
 .aporte-form{display:grid;grid-template-columns:1fr 1fr;gap:8px;border-top:1px solid var(--line);padding-top:12px}
 .aporte-form .full{grid-column:1/-1}
 .aporte-form .save{background:var(--accent);color:var(--accent-ink);border:0;border-radius:8px;padding:10px;font-weight:600}
@@ -210,9 +215,9 @@ input,select,button{font-size:16px}
       <button class="linkbtn" id="editPlan" type="button" hidden>Editar plan</button>
     </div>
     <div id="planSetup">
-      <p class="plan-intro" id="planIntro">Escribe cuánto te entra al mes y cuánto quieres guardar. Con eso la app calcula cuánto puedes gastar cada día y marca en el calendario los días en que ahorraste.</p>
+      <p class="plan-intro" id="planIntro">Escribe cuánto quieres guardar al mes y, si tienes un ingreso fijo, cuánto es (pon 0 si varía). Después podrás registrar cada ingreso que te entre y el plan se ajusta solo.</p>
       <form class="plan-form" id="planForm" novalidate style="margin-top:12px">
-        <div class="field"><label class="label" for="pIncome">Ingreso mensual</label><input id="pIncome" class="num" inputmode="numeric" placeholder="1.800.000" autocomplete="off"></div>
+        <div class="field"><label class="label" for="pIncome">Ingreso fijo al mes</label><input id="pIncome" class="num" inputmode="numeric" placeholder="0 si no es fijo" autocomplete="off"></div>
         <div class="field"><label class="label" for="pSave">Ahorrar cada mes</label><input id="pSave" class="num" inputmode="numeric" placeholder="300.000" autocomplete="off"></div>
         <div class="field"><label class="label" for="pGoalName">Meta (opcional)</label><input id="pGoalName" maxlength="40" placeholder="Ej: moto, viaje, fondo de emergencia" autocomplete="off"></div>
         <div class="field"><label class="label" for="pGoal">Valor de la meta</label><input id="pGoal" class="num" inputmode="numeric" placeholder="4.000.000" autocomplete="off"></div>
@@ -230,6 +235,20 @@ input,select,button{font-size:16px}
       <div class="meter" style="margin-top:16px">
         <div class="row"><span>Gastado del presupuesto del mes</span><span class="num" id="pBudgetTxt">—</span></div>
         <div class="track"><div class="fill" id="pBudgetFill"></div></div>
+      </div>
+      <div class="ingresos" style="margin-top:18px">
+        <div class="ing-head">
+          <div class="stat"><span class="label" id="iTitle">Ingresos del mes</span><span class="v num good" id="iTotal">$0</span><small id="iBreak">—</small></div>
+        </div>
+        <form class="aporte-form ing-form" id="inForm" novalidate>
+          <span class="label full">Registrar un ingreso</span>
+          <div class="field"><label class="label" for="inAmt">Valor</label><input id="inAmt" class="num" inputmode="numeric" placeholder="250.000" autocomplete="off"></div>
+          <div class="field"><label class="label" for="inDate">Fecha</label><input id="inDate" type="date"></div>
+          <div class="field full"><label class="label" for="inNote">¿De dónde salió?</label><input id="inNote" maxlength="60" placeholder="Ej: quincena, trabajo extra, venta" autocomplete="off"></div>
+          <p class="err" id="inErr" hidden></p>
+          <button class="save full" type="submit">Añadir ingreso</button>
+        </form>
+        <ul class="items" id="inList"></ul>
       </div>
       <div class="plan-split" style="margin-top:18px">
         <div class="hist">
@@ -311,23 +330,26 @@ input,select,button{font-size:16px}
   let selected=todayIso;
   let expenses=[]; // {id,date,desc,amount,cat,createdAt}
   let plan=null;   // {income,save,goalName,goal,start:"YYYY-MM"}
+  let ingresos=[]; // {id,date,amount,note,createdAt}
   let aportes=[];  // {id,date,amount,type:"in"|"out",note,createdAt}
   let store=null;  // {add, remove, savePlan}
   let pendingDel=null;
   let editingPlan=false;
 
   // ---------- storage ----------
-  const LS="gastos-diarios-v1", LSP="gastos-plan-v1", LSA="gastos-aportes-v1";
+  const LS="gastos-diarios-v1", LSP="gastos-plan-v1", LSA="gastos-aportes-v1", LSI="gastos-ingresos-v1";
   function lsRead(k,d){try{return JSON.parse(localStorage.getItem(k)||d)}catch(e){return JSON.parse(d)}}
   function lsWrite(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}}
   function useLocal(msg){
-    expenses=lsRead(LS,"[]");plan=lsRead(LSP,"null");aportes=lsRead(LSA,"[]");
+    expenses=lsRead(LS,"[]");plan=lsRead(LSP,"null");aportes=lsRead(LSA,"[]");ingresos=lsRead(LSI,"[]");
     store={
       add:async e=>{expenses.push(Object.assign({id:"l"+Date.now()+Math.random().toString(36).slice(2,6)},e));lsWrite(LS,expenses);render()},
       remove:async id=>{expenses=expenses.filter(x=>x.id!==id);lsWrite(LS,expenses);render()},
       savePlan:async p=>{plan=p;lsWrite(LSP,p);render()},
       addAporte:async a=>{aportes.push(Object.assign({id:"a"+Date.now()+Math.random().toString(36).slice(2,6)},a));lsWrite(LSA,aportes);render()},
-      removeAporte:async id=>{aportes=aportes.filter(x=>x.id!==id);lsWrite(LSA,aportes);render()}};
+      removeAporte:async id=>{aportes=aportes.filter(x=>x.id!==id);lsWrite(LSA,aportes);render()},
+      addIngreso:async a=>{ingresos.push(Object.assign({id:"i"+Date.now()+Math.random().toString(36).slice(2,6)},a));lsWrite(LSI,ingresos);render()},
+      removeIngreso:async id=>{ingresos=ingresos.filter(x=>x.id!==id);lsWrite(LSI,ingresos);render()}};
     $("sync").textContent=msg;render();
   }
   async function init(){
@@ -343,11 +365,13 @@ input,select,button{font-size:16px}
         remove:async id=>{await col.doc(id).delete()},
         savePlan:async p=>{await col.doc(PLAN_ID).set(Object.assign({kind:"plan"},p))},
         addAporte:async a=>{await col.add(Object.assign({kind:"aporte"},a))},
-        removeAporte:async id=>{await col.doc(id).delete()}};
+        removeAporte:async id=>{await col.doc(id).delete()},
+        addIngreso:async a=>{await col.add(Object.assign({kind:"ingreso"},a))},
+        removeIngreso:async id=>{await col.doc(id).delete()}};
       col.onSnapshot(snap=>{
-        const ex=[],ap=[];let p=null;
-        snap.docs.forEach(d=>{const v=d.data()||{};if(d.id===PLAN_ID||v.kind==="plan"){p=v}else if(v.kind==="aporte"){ap.push(Object.assign({id:d.id},v))}else ex.push(Object.assign({id:d.id},v))});
-        expenses=ex;plan=p;aportes=ap;
+        const ex=[],ap=[],ing=[];let p=null;
+        snap.docs.forEach(d=>{const v=d.data()||{};if(d.id===PLAN_ID||v.kind==="plan"){p=v}else if(v.kind==="aporte"){ap.push(Object.assign({id:d.id},v))}else if(v.kind==="ingreso"){ing.push(Object.assign({id:d.id},v))}else ex.push(Object.assign({id:d.id},v))});
+        expenses=ex;plan=p;aportes=ap;ingresos=ing;
         $("sync").textContent="Guardado en tu cuenta · privado";
         render();
       },err=>{$("sync").textContent="No se pudo sincronizar: "+(err&&err.message||"error de conexión")+". Recarga la página."});
@@ -365,8 +389,10 @@ input,select,button{font-size:16px}
     if(y===now.getFullYear()&&m===now.getMonth())return "current";
     return new Date(y,m,1)>now?"future":"past";
   }
-  const hasPlan=()=>plan&&plan.income>0;
-  const dailyBudget=(y,m)=>Math.max(0,plan.income-plan.save)/daysIn(y,m);
+  const hasPlan=()=>!!(plan&&typeof plan.save==="number");
+  const extrasOf=(y,m)=>{const pre=ym(y,m)+"-";return ingresos.reduce((s,i)=>typeof i.date==="string"&&i.date.startsWith(pre)?s+(Number(i.amount)||0):s,0)};
+  const incomeOf=(y,m)=>(Number(plan.income)||0)+extrasOf(y,m);
+  const dailyBudget=(y,m)=>Math.max(0,incomeOf(y,m)-plan.save)/daysIn(y,m);
 
   // ---------- render ----------
   function render(){
@@ -461,11 +487,12 @@ input,select,button{font-size:16px}
         $("pGoalName").value=plan&&plan.goalName||"";
         $("pGoal").value=plan&&plan.goal?plan.goal.toLocaleString("es-CO"):"";
       }
-      $("planIntro").textContent=editingPlan?"Ajusta tus números. Los cambios se aplican a todos los meses desde que empezaste el plan.":"Escribe cuánto te entra al mes y cuánto quieres guardar. Con eso la app calcula cuánto puedes gastar cada día y marca en el calendario los días en que ahorraste.";
+      $("planIntro").textContent=editingPlan?"Ajusta tus números. Los cambios se aplican a todos los meses desde que empezaste el plan.":"Escribe cuánto quieres guardar al mes y, si tienes un ingreso fijo, cuánto es (pon 0 si varía). Después podrás registrar cada ingreso que te entre y el plan se ajusta solo.";
       return;
     }
     const monthKey=ym(view.y,view.m);
-    const budget=Math.max(0,plan.income-plan.save);
+    const income=incomeOf(view.y,view.m);
+    const budget=Math.max(0,income-plan.save);
     const daily=budget/dim;
     const active=monthKey>=(plan.start||"0000-00");
 
@@ -486,12 +513,12 @@ input,select,button{font-size:16px}
     $("pLeft").textContent=fmt(left);$("pLeft").className="v num "+(left<0?"bad":"");
     $("pLeftNote").textContent=left<0?"Te pasaste del presupuesto":"de "+fmt(budget)+" para gastar";
 
-    const saved=plan.income-total;
+    const saved=income-total;
     if(st==="current"&&!Object.keys(byDay).length){
       $("pMonthSave").textContent="—";$("pMonthSave").className="v num";
       $("pMonthNote").textContent="Anota tus gastos para ver cuánto vas a ahorrar · meta "+fmt(plan.save);
     }else if(st==="current"){
-      const proj=elapsed?plan.income-total/elapsed*dim:plan.income;
+      const proj=elapsed?income-total/elapsed*dim:income;
       $("pMonthSave").textContent=fmt(proj);$("pMonthSave").className="v num "+(proj>=plan.save?"good":"bad");
       $("pMonthNote").textContent="Proyección si sigues gastando igual · meta "+fmt(plan.save);
     }else if(st==="past"){
@@ -511,7 +538,36 @@ input,select,button{font-size:16px}
     $("pBudgetFill").classList.toggle("over",pct>1);
     $("pBudgetTxt").textContent=fmt(total)+" de "+fmt(budget)+" · "+Math.round(pct*100)+"%";
 
+    renderIngresos();
     renderHistory();
+  }
+
+  function renderIngresos(){
+    const name=new Date(view.y,view.m,1).toLocaleDateString("es-CO",{month:"long"});
+    const fixed=Number(plan.income)||0,ext=extrasOf(view.y,view.m);
+    $("iTitle").textContent="Ingresos de "+name;
+    $("iTotal").textContent=fmt(fixed+ext);
+    $("iBreak").textContent=(fixed?"Fijo "+fmt(fixed)+" + registrados "+fmt(ext):"Suma de lo que registraste este mes")+". Todo el plan se calcula con este total.";
+    const pre=ym(view.y,view.m)+"-";
+    const list=ingresos.filter(i=>typeof i.date==="string"&&i.date.startsWith(pre)).sort((a,b)=>(b.date||"").localeCompare(a.date||"")||(b.createdAt||0)-(a.createdAt||0));
+    const ul=$("inList");ul.innerHTML="";
+    if(!list.length){const li=document.createElement("li");li.className="empty";li.style.display="block";
+      li.textContent=fixed?"No has registrado ingresos extra en "+name+". Si te entra algo más, anótalo aquí y el presupuesto sube solo.":"Aún no hay ingresos en "+name+". Anota cada entrada (quincena, trabajos, ventas) y el plan se ajusta solo.";ul.appendChild(li)}
+    list.forEach(i=>{
+      const li=document.createElement("li");
+      li.innerHTML='<span class="dot" style="background:var(--good)"></span><span class="desc"><b></b><small></small></span><span class="num good"></span><button class="del" type="button">Borrar</button>';
+      li.querySelector("b").textContent=i.note||"Ingreso";
+      const [y,m,d]=i.date.split("-").map(Number);
+      li.querySelector("small").textContent=new Date(y,m-1,d).toLocaleDateString("es-CO",{weekday:"short",day:"numeric",month:"short"});
+      li.querySelector(".num").textContent="+"+fmt(i.amount);
+      const del=li.querySelector(".del");
+      if(pendingDel===i.id){del.textContent="¿Seguro?";del.classList.add("confirm")}
+      del.onclick=async()=>{
+        if(pendingDel!==i.id){pendingDel=i.id;render();setTimeout(()=>{if(pendingDel===i.id){pendingDel=null;render()}},3500);return}
+        pendingDel=null;try{await store.removeIngreso(i.id);toast("Ingreso borrado")}catch(err){toast("No se pudo borrar. Intenta de nuevo.")}
+      };
+      ul.appendChild(li);
+    });
   }
 
   function renderHistory(){
@@ -522,7 +578,8 @@ input,select,button{font-size:16px}
       const t=monthTotals(o.y,o.m).total;const st=monthState(o.y,o.m);const dim=daysIn(o.y,o.m);
       const el=st==="current"?now.getDate():dim;
       const empty=st==="current"&&t===0;
-      const val=empty?0:(st==="current"?(el?plan.income-t/el*dim:plan.income):plan.income-t);
+      const inc=incomeOf(o.y,o.m);
+      const val=empty?0:(st==="current"?(el?inc-t/el*dim:inc):inc-t);
       return Object.assign(o,{val,proj:st==="current",t,empty});
     });
     const max=Math.max(plan.save,...rows.map(r=>Math.abs(r.val)),1);
@@ -545,7 +602,7 @@ input,select,button{font-size:16px}
     // meta: aportes reales que el usuario registra
     const box=$("goalBox");box.innerHTML="";
     let acc=0;const allMonths=[];{let yy=now.getFullYear(),mm=now.getMonth();while(ym(yy,mm)>=(plan.start||ym(yy,mm))){allMonths.push({y:yy,m:mm});mm--;if(mm<0){mm=11;yy--}if(allMonths.length>120)break}}
-    allMonths.forEach(o=>{if(monthState(o.y,o.m)==="past")acc+=plan.income-monthTotals(o.y,o.m).total});
+    allMonths.forEach(o=>{if(monthState(o.y,o.m)==="past")acc+=incomeOf(o.y,o.m)-monthTotals(o.y,o.m).total});
     const sign=a=>a.type==="out"?-1:1;
     const totalAp=aportes.reduce((s,a)=>s+sign(a)*(Number(a.amount)||0),0);
     const curKey=ym(now.getFullYear(),now.getMonth());
@@ -598,7 +655,21 @@ input,select,button{font-size:16px}
   const sel=$("fCat");CATS.forEach(c=>{const o=document.createElement("option");o.value=c.k;o.textContent=c.n;sel.appendChild(o)});
   $("fDate").value=selected;
   function moneyInput(id){$(id).addEventListener("input",e=>{const d=e.target.value.replace(/\D/g,"").slice(0,12);e.target.value=d?Number(d).toLocaleString("es-CO"):""})}
-  ["fAmt","pIncome","pSave","pGoal","apAmt"].forEach(moneyInput);
+  ["fAmt","pIncome","pSave","pGoal","apAmt","inAmt"].forEach(moneyInput);
+  $("inDate").value=todayIso;
+  $("inForm").addEventListener("submit",async ev=>{
+    ev.preventDefault();const err=$("inErr");
+    const amount=digits($("inAmt").value),date=$("inDate").value;
+    if(!amount){err.textContent="Escribe el valor del ingreso (solo números).";err.hidden=false;$("inAmt").focus();return}
+    if(!/^\d{4}-\d{2}-\d{2}$/.test(date)){err.textContent="Elige una fecha válida.";err.hidden=false;return}
+    if(!store){err.textContent="Todavía se está conectando. Espera un segundo e intenta de nuevo.";err.hidden=false;return}
+    err.hidden=true;
+    try{await store.addIngreso({amount,date,note:$("inNote").value.trim(),createdAt:Date.now()});
+      $("inAmt").value="";$("inNote").value="";
+      const [y,m]=date.split("-").map(Number);view={y,m:m-1};render();
+      toast("Ingreso añadido: +"+fmt(amount));}
+    catch(e){err.textContent="No se pudo guardar. Revisa tu conexión e intenta de nuevo.";err.hidden=false}
+  });
   $("apDate").value=todayIso;
   $("apForm").addEventListener("submit",async ev=>{
     ev.preventDefault();const err=$("apErr");
@@ -633,8 +704,8 @@ input,select,button{font-size:16px}
   $("planForm").addEventListener("submit",async ev=>{
     ev.preventDefault();const err=$("pErr");
     const income=digits($("pIncome").value),save=digits($("pSave").value),goal=digits($("pGoal").value);
-    if(!income){err.textContent="Escribe tu ingreso mensual.";err.hidden=false;$("pIncome").focus();return}
-    if(save>=income){err.textContent="Lo que quieres ahorrar debe ser menor que tu ingreso.";err.hidden=false;$("pSave").focus();return}
+    if(!save){err.textContent="Escribe cuánto quieres ahorrar cada mes.";err.hidden=false;$("pSave").focus();return}
+    if(income&&save>=income){err.textContent="Lo que quieres ahorrar debe ser menor que tu ingreso fijo.";err.hidden=false;$("pSave").focus();return}
     if(!store){err.textContent="Todavía se está conectando. Espera un segundo e intenta de nuevo.";err.hidden=false;return}
     err.hidden=true;
     const p={income,save,goal,goalName:$("pGoalName").value.trim(),start:(plan&&plan.start)||ym(now.getFullYear(),now.getMonth())};
@@ -645,7 +716,7 @@ input,select,button{font-size:16px}
 
   // ---------- copia de seguridad ----------
   $("bkExport").onclick=()=>{
-    const data=JSON.stringify({app:"mis-gastos",version:1,exportado:new Date().toISOString(),plan,gastos:expenses,aportes},null,1);
+    const data=JSON.stringify({app:"mis-gastos",version:1,exportado:new Date().toISOString(),plan,gastos:expenses,aportes,ingresos},null,1);
     const fname="mis-gastos-"+todayIso+".json";
     if(window.Android&&Android.saveBackup){const where=Android.saveBackup(data,fname);
       toast(where?(where==="Descargas"?"Copia guardada en Descargas":"Copia guardada en la carpeta de la app"):"No se pudo guardar la copia");return}
@@ -660,8 +731,9 @@ input,select,button{font-size:16px}
       const ids=new Set(expenses.map(x=>x.id));let n=0;
       d.gastos.forEach(g=>{if(g&&g.id&&!ids.has(g.id)&&g.date&&g.amount){expenses.push(g);n++}});
       if(Array.isArray(d.aportes)){const aids=new Set(aportes.map(x=>x.id));d.aportes.forEach(a=>{if(a&&a.id&&!aids.has(a.id)&&a.amount)aportes.push(a)})}
-      if(d.plan&&d.plan.income)plan=d.plan;
-      lsWrite(LS,expenses);lsWrite(LSP,plan);lsWrite(LSA,aportes);render();toast("Copia restaurada: "+n+" gastos añadidos");
+      if(Array.isArray(d.ingresos)){const iids=new Set(ingresos.map(x=>x.id));d.ingresos.forEach(a=>{if(a&&a.id&&!iids.has(a.id)&&a.amount)ingresos.push(a)})}
+      if(d.plan&&typeof d.plan.save==="number")plan=d.plan;
+      lsWrite(LS,expenses);lsWrite(LSP,plan);lsWrite(LSA,aportes);lsWrite(LSI,ingresos);render();toast("Copia restaurada: "+n+" gastos añadidos");
     }catch(err){toast("Ese archivo no es una copia válida de Mis gastos")}
     e.target.value=""};
     r.readAsText(f);
