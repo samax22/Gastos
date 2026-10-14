@@ -5,6 +5,9 @@ on:
     branches: [ main ]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -30,3 +33,12 @@ jobs:
         with:
           name: MisGastos-APK
           path: MisGastos.apk
+
+      - name: Publicar en Releases
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v1.${{ github.run_number }}
+          name: Mis gastos v1.${{ github.run_number }}
+          body: Descarga MisGastos.apk e instálalo encima de la versión anterior. Tus datos se conservan.
+          files: MisGastos.apk
+          make_latest: true
