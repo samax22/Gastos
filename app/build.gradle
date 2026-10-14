@@ -2,6 +2,9 @@ plugins {
     id 'com.android.application'
 }
 
+// Número de versión automático: cada compilación en GitHub sube 1
+def runNumber = (System.getenv("GITHUB_RUN_NUMBER") ?: "1").toInteger()
+
 android {
     namespace 'com.samuel.misgastos'
     compileSdk 34
@@ -10,12 +13,27 @@ android {
         applicationId 'com.samuel.misgastos'
         minSdk 24
         targetSdk 34
-        versionCode 1
-        versionName '1.0'
+        versionCode runNumber
+        versionName "1.${runNumber}"
+    }
+
+    // Firma fija: permite instalar cada APK nuevo encima del anterior sin perder datos.
+    // No cambies ni borres misgastos.keystore.
+    signingConfigs {
+        fija {
+            storeFile file('misgastos.keystore')
+            storePassword 'misgastos2026'
+            keyAlias 'misgastos'
+            keyPassword 'misgastos2026'
+        }
     }
 
     buildTypes {
-        release { minifyEnabled false }
+        debug { signingConfig signingConfigs.fija }
+        release {
+            minifyEnabled false
+            signingConfig signingConfigs.fija
+        }
     }
 
     compileOptions {
